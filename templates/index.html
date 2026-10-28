@@ -1,0 +1,686 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thermal-Aware Scheduler</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f1f5f9;
+            color: #1e293b;
+        }
+
+        header {
+            background: #0f172a;
+            color: white;
+            padding: 25px 15px;
+            text-align: center;
+        }
+
+        header h1 { margin: 0 0 10px; }
+        header p { margin: 0; color: #cbd5e1; }
+
+        main {
+            max-width: 1200px;
+            margin: 25px auto;
+            padding: 0 16px;
+        }
+
+        .card {
+            background: white;
+            padding: 22px;
+            margin-bottom: 24px;
+            border-radius: 14px;
+            box-shadow: 0 3px 12px #0000000d;
+        }
+
+        h2 { margin-top: 0; color: #0f172a; }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 7px;
+            font-weight: bold;
+        }
+
+        input {
+            width: 100%;
+            padding: 11px;
+            border: 1px solid #cbd5e1;
+            border-radius: 7px;
+            font-size: 15px;
+        }
+
+        button {
+            border: none;
+            border-radius: 7px;
+            padding: 12px 18px;
+            font-size: 15px;
+            font-weight: bold;
+            cursor: pointer;
+            margin: 15px 8px 0 0;
+        }
+
+        .primary { background: #2563eb; color: white; }
+        .secondary { background: #e2e8f0; color: #0f172a; }
+        button:hover { opacity: 0.88; }
+
+        #processInputs { margin-top: 20px; }
+
+        .process-row {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
+            margin-bottom: 14px;
+            padding: 14px;
+            background: #f8fafc;
+            border-radius: 8px;
+        }
+
+        .message {
+            margin-top: 15px;
+            padding: 12px;
+            border-radius: 7px;
+            display: none;
+            overflow-wrap: anywhere;
+        }
+
+        .error { background: #fee2e2; color: #991b1b; }
+        .success { background: #dcfce7; color: #166534; }
+
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 15px;
+        }
+
+        .metric {
+            padding: 18px;
+            background: #eff6ff;
+            border-radius: 10px;
+            border-left: 4px solid #2563eb;
+        }
+
+        .metric h3 { margin: 0 0 10px; font-size: 14px; }
+        .metric p { font-size: 24px; font-weight: bold; margin: 0; }
+
+        .chart-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 20px;
+        }
+
+        .chart-box {
+            position: relative;
+            min-width: 0;
+            height: 320px;
+            padding: 10px;
+        }
+
+        .chart-box canvas {
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        .table-scroll, .gantt-scroll {
+            width: 100%;
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 560px;
+        }
+
+        th, td {
+            padding: 14px;
+            text-align: center;
+            border: 1px solid #e2e8f0;
+        }
+
+        th { background: #0f172a; color: white; }
+        tbody tr:nth-child(even) { background: #f8fafc; }
+        .better { color: #15803d; font-weight: bold; }
+
+        .gantt-card {
+            padding: 18px;
+            margin-top: 20px;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+        }
+
+        .gantt-card h3 { margin-top: 0; }
+        .gantt-scroll canvas { display: block; max-width: none; }
+        .hidden { display: none; }
+
+        footer {
+            text-align: center;
+            padding: 20px;
+            color: #64748b;
+        }
+
+        @media (max-width: 700px) {
+            .form-row, .process-row, .metrics, .chart-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .chart-box { height: 280px; }
+        }
+    </style>
+</head>
+
+<body>
+<header>
+    <h1>Thermal-Aware Scheduler</h1>
+    <p>Compare normal scheduling with thermal-aware scheduling</p>
+</header>
+
+<main>
+    <section class="card">
+        <h2>Process Configuration</h2>
+
+        <div class="form-row">
+            <div>
+                <label for="processCount">Number of Processes</label>
+                <input id="processCount" type="number"
+                       min="1" max="100" value="4">
+            </div>
+        </div>
+
+        <button class="secondary" onclick="createInputs()">Create Inputs</button>
+        <div id="processInputs"></div>
+        <button class="primary" onclick="runScheduler()">Run Scheduler</button>
+        <div id="message" class="message"></div>
+    </section>
+
+    <section id="results" class="hidden">
+        <section class="card">
+            <h2>Normal Scheduler Results</h2>
+            <div class="metrics">
+                <div class="metric">
+                    <h3>Average Waiting Time</h3>
+                    <p id="normalWaitingCard">-</p>
+                </div>
+                <div class="metric">
+                    <h3>Average Turnaround Time</h3>
+                    <p id="normalTurnaroundCard">-</p>
+                </div>
+                <div class="metric">
+                    <h3>Maximum Temperature</h3>
+                    <p id="normalTemperatureCard">-</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>Thermal-Aware Scheduler Results</h2>
+            <div class="metrics">
+                <div class="metric">
+                    <h3>Average Waiting Time</h3>
+                    <p id="thermalWaitingCard">-</p>
+                </div>
+                <div class="metric">
+                    <h3>Average Turnaround Time</h3>
+                    <p id="thermalTurnaroundCard">-</p>
+                </div>
+                <div class="metric">
+                    <h3>Maximum Temperature</h3>
+                    <p id="thermalTemperatureCard">-</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>Scheduler Performance Comparison</h2>
+            <div class="table-scroll">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Performance Metric</th>
+                            <th>Normal Scheduler</th>
+                            <th>Thermal-Aware Scheduler</th>
+                            <th>Better Result</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Average Waiting Time</td>
+                            <td id="normalWaiting">-</td>
+                            <td id="thermalWaiting">-</td>
+                            <td id="waitingBetter">-</td>
+                        </tr>
+                        <tr>
+                            <td>Average Turnaround Time</td>
+                            <td id="normalTurnaround">-</td>
+                            <td id="thermalTurnaround">-</td>
+                            <td id="turnaroundBetter">-</td>
+                        </tr>
+                        <tr>
+                            <td>Maximum Temperature</td>
+                            <td id="normalTemperature">-</td>
+                            <td id="thermalTemperature">-</td>
+                            <td id="temperatureBetter">-</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>Performance Graphs</h2>
+            <div class="chart-grid">
+                <div class="chart-box"><canvas id="waitingChart"></canvas></div>
+                <div class="chart-box"><canvas id="turnaroundChart"></canvas></div>
+                <div class="chart-box"><canvas id="temperatureChart"></canvas></div>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>Gantt Charts</h2>
+            <p>Each row represents a CPU core. Blocks show process execution intervals.</p>
+
+            <div class="gantt-card">
+                <h3>Normal Scheduler</h3>
+                <div class="gantt-scroll"><canvas id="ganttNormal" height="230"></canvas></div>
+            </div>
+
+            <div class="gantt-card">
+                <h3>Thermal-Aware Scheduler</h3>
+                <div class="gantt-scroll"><canvas id="ganttThermal" height="230"></canvas></div>
+            </div>
+        </section>
+    </section>
+</main>
+
+<footer>Thermal-Aware CPU Scheduling Project</footer>
+
+<script>
+    let charts = {};
+
+    function showMessage(message, type) {
+        const box = document.getElementById("message");
+        box.textContent = message;
+        box.className = "message " + type;
+        box.style.display = "block";
+    }
+
+    function hideMessage() {
+        document.getElementById("message").style.display = "none";
+    }
+
+    function createInputs() {
+        const count = Number(document.getElementById("processCount").value);
+        const container = document.getElementById("processInputs");
+
+        if (!Number.isInteger(count) || count < 1 || count > 100) {
+            showMessage("Enter a process count between 1 and 100.", "error");
+            return;
+        }
+
+        container.innerHTML = "";
+
+        for (let i = 1; i <= count; i++) {
+            const row = document.createElement("div");
+            row.className = "process-row";
+
+            row.innerHTML = `
+                <div>
+                    <label for="arrival${i}">Process ${i} Arrival Time</label>
+                    <input type="number" min="0" step="1"
+                           value="0" id="arrival${i}" required>
+                </div>
+
+                <div>
+                    <label for="burst${i}">Process ${i} Burst Time</label>
+                    <input type="number" min="1" step="1"
+                           value="${i + 1}" id="burst${i}" required>
+                </div>
+
+                <div>
+                    <label for="priority${i}">Process ${i} Priority</label>
+                    <input type="number" min="1" step="1"
+                           value="${i}" id="priority${i}" required>
+                </div>
+
+                <div>
+                    <label>Process ID</label>
+                    <input type="text" value="P${i}" disabled>
+                </div>
+            `;
+
+            container.appendChild(row);
+        }
+
+        document.getElementById("results").classList.add("hidden");
+        hideMessage();
+        showMessage("Process inputs created successfully.", "success");
+    }
+
+    function findMetric(object, names) {
+        if (!object) return null;
+
+        for (const name of names) {
+            if (object[name] !== undefined && object[name] !== null) {
+                const value = Number(object[name]);
+                if (Number.isFinite(value)) return value;
+            }
+        }
+
+        return null;
+    }
+
+    function getSchedulerMetrics(data, kind) {
+        const root = kind === "normal"
+            ? (data.normal || data.normalResults || data.normalMetrics)
+            : (data.thermal || data.thermalAware ||
+               data.thermalResults || data.thermalMetrics);
+
+        return {
+            waiting: findMetric(root, [
+                "averageWaitingTime", "avgWaitingTime", "waitingTime"
+            ]),
+            turnaround: findMetric(root, [
+                "averageTurnaroundTime", "avgTurnaroundTime", "turnaroundTime"
+            ]),
+            temperature: findMetric(root, [
+                "maximumTemperature", "maxTemperature", "temperature"
+            ])
+        };
+    }
+
+    function formatValue(value) {
+        return value === null ? "N/A" : value.toFixed(2);
+    }
+
+    function setText(id, value) {
+        document.getElementById(id).textContent = formatValue(value);
+    }
+
+    function setComparison(normal, thermal, normalId, thermalId, betterId,
+                           lowerIsBetter = true) {
+        setText(normalId, normal);
+        setText(thermalId, thermal);
+
+        const target = document.getElementById(betterId);
+        target.className = "";
+
+        if (normal === null || thermal === null) {
+            target.textContent = "N/A";
+            return;
+        }
+
+        if (Math.abs(normal - thermal) < 0.000001) {
+            target.textContent = "Equal";
+            return;
+        }
+
+        const normalBetter = lowerIsBetter
+            ? normal < thermal
+            : normal > thermal;
+
+        target.textContent = normalBetter
+            ? "Normal Scheduler"
+            : "Thermal-Aware Scheduler";
+
+        target.className = "better";
+    }
+
+    function makeBarChart(id, title, normalValue, thermalValue) {
+        if (charts[id]) charts[id].destroy();
+
+        charts[id] = new Chart(document.getElementById(id), {
+            type: "bar",
+            data: {
+                labels: ["Normal Scheduler", "Thermal-Aware Scheduler"],
+                datasets: [{
+                    label: title,
+                    data: [normalValue, thermalValue],
+                    backgroundColor: ["#2563eb", "#16a34a"],
+                    borderColor: ["#1d4ed8", "#15803d"],
+                    borderWidth: 2,
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: { duration: 800 },
+                plugins: {
+                    title: {
+                        display: true,
+                        text: title,
+                        color: "#0f172a",
+                        font: { size: 15, weight: "bold" }
+                    },
+                    legend: { display: false },
+                    tooltip: { enabled: true }
+                },
+                scales: {
+                    x: {
+                        ticks: { color: "#334155" },
+                        grid: { display: false }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        ticks: { color: "#334155" },
+                        title: {
+                            display: true,
+                            text: "Value",
+                            color: "#334155"
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    function drawGanttChart(canvasId, schedule) {
+        const canvas = document.getElementById(canvasId);
+        const ctx = canvas.getContext("2d");
+        const coreCount = 4;
+        const left = 65;
+        const right = 20;
+        const top = 25;
+        const rowHeight = 42;
+        const bottom = 35;
+        const entries = Array.isArray(schedule) ? schedule : [];
+
+        let maxTime = 1;
+
+        entries.forEach(item => {
+            maxTime = Math.max(maxTime, Number(item.completionTime) || 0);
+        });
+
+        const pixelsPerUnit = 35;
+        const plotWidth = Math.max(500, maxTime * pixelsPerUnit);
+        const totalWidth = left + plotWidth + right;
+        const totalHeight = top + coreCount * rowHeight + bottom;
+
+        canvas.width = totalWidth;
+        canvas.height = totalHeight;
+        canvas.style.width = totalWidth + "px";
+        canvas.style.height = totalHeight + "px";
+
+        ctx.clearRect(0, 0, totalWidth, totalHeight);
+        ctx.font = "12px Arial";
+        ctx.textBaseline = "middle";
+
+        for (let core = 1; core <= coreCount; core++) {
+            const y = top + (core - 1) * rowHeight;
+            ctx.fillStyle = "#334155";
+            ctx.fillText("Core " + core, 10, y + 15);
+            ctx.strokeStyle = "#e2e8f0";
+            ctx.beginPath();
+            ctx.moveTo(left, y + rowHeight - 2);
+            ctx.lineTo(left + plotWidth, y + rowHeight - 2);
+            ctx.stroke();
+        }
+
+        for (let time = 0; time <= maxTime; time++) {
+            const x = left + time * pixelsPerUnit;
+            ctx.strokeStyle = "#e2e8f0";
+            ctx.beginPath();
+            ctx.moveTo(x, top - 5);
+            ctx.lineTo(x, top + coreCount * rowHeight - 3);
+            ctx.stroke();
+            ctx.fillStyle = "#475569";
+            ctx.fillText(String(time), x - 3, totalHeight - 16);
+        }
+
+        entries.forEach(item => {
+            const core = Number(item.core);
+            const start = Number(item.startTime);
+            const end = Number(item.completionTime);
+
+            if (!Number.isFinite(core) || !Number.isFinite(start) ||
+                !Number.isFinite(end) || core < 1 || core > coreCount ||
+                start < 0 || end < start) return;
+
+            const x = left + start * pixelsPerUnit;
+            const y = top + (core - 1) * rowHeight + 4;
+            const width = Math.max(2, (end - start) * pixelsPerUnit - 2);
+            const hue = (Number(item.processId) * 57 || 210) % 360;
+
+            ctx.fillStyle = `hsl(${hue}, 70%, 55%)`;
+            ctx.fillRect(x, y, width, 28);
+
+            if (width > 25) {
+                ctx.fillStyle = "#ffffff";
+                ctx.font = "bold 11px Arial";
+                ctx.fillText("P" + item.processId, x + 4, y + 14);
+            }
+        });
+
+        ctx.fillStyle = "#334155";
+        ctx.font = "12px Arial";
+        ctx.fillText("Time", left, totalHeight - 5);
+    }
+
+    async function runScheduler() {
+        hideMessage();
+
+        const count = Number(document.getElementById("processCount").value);
+
+        if (!Number.isInteger(count) || count < 1 || count > 100) {
+            showMessage("Enter a process count between 1 and 100.", "error");
+            return;
+        }
+
+        const processes = [];
+
+        for (let i = 1; i <= count; i++) {
+            const arrivalInput = document.getElementById("arrival" + i);
+            const burstInput = document.getElementById("burst" + i);
+            const priorityInput = document.getElementById("priority" + i);
+
+            if (!arrivalInput || !burstInput || !priorityInput) {
+                showMessage("Click Create Inputs before running the scheduler.", "error");
+                return;
+            }
+
+            const arrival = Number(arrivalInput.value);
+            const burst = Number(burstInput.value);
+            const priority = Number(priorityInput.value);
+
+            if (!Number.isInteger(arrival) || arrival < 0) {
+                showMessage("Arrival times must be non-negative integers.", "error");
+                return;
+            }
+
+            if (!Number.isInteger(burst) || burst < 1) {
+                showMessage("Burst times must be positive integers.", "error");
+                return;
+            }
+
+            if (!Number.isInteger(priority) || priority < 1) {
+                showMessage("Priority must be a positive integer.", "error");
+                return;
+            }
+
+            processes.push({
+                id: i,
+                arrivalTime: arrival,
+                burstTime: burst,
+                priority: priority
+            });
+        }
+
+        try {
+            showMessage("Running scheduler. Please wait...", "success");
+
+            const response = await fetch("/run-scheduler", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ processes })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok || data.error) {
+                throw new Error(data.error || "Scheduler request failed.");
+            }
+
+            const normal = getSchedulerMetrics(data, "normal");
+            const thermal = getSchedulerMetrics(data, "thermal");
+
+            document.getElementById("results").classList.remove("hidden");
+
+            setText("normalWaitingCard", normal.waiting);
+            setText("normalTurnaroundCard", normal.turnaround);
+            setText("normalTemperatureCard", normal.temperature);
+            setText("thermalWaitingCard", thermal.waiting);
+            setText("thermalTurnaroundCard", thermal.turnaround);
+            setText("thermalTemperatureCard", thermal.temperature);
+
+            setComparison(normal.waiting, thermal.waiting,
+                          "normalWaiting", "thermalWaiting", "waitingBetter");
+
+            setComparison(normal.turnaround, thermal.turnaround,
+                          "normalTurnaround", "thermalTurnaround",
+                          "turnaroundBetter");
+
+            setComparison(normal.temperature, thermal.temperature,
+                          "normalTemperature", "thermalTemperature",
+                          "temperatureBetter");
+
+            makeBarChart("waitingChart", "Average Waiting Time",
+                         normal.waiting, thermal.waiting);
+
+            makeBarChart("turnaroundChart", "Average Turnaround Time",
+                         normal.turnaround, thermal.turnaround);
+
+            makeBarChart("temperatureChart", "Maximum Temperature (°C)",
+                         normal.temperature, thermal.temperature);
+
+            if (!data.gantt) {
+                throw new Error("Gantt data is missing. Check app.py and scheduler_api.cpp.");
+            }
+
+            drawGanttChart("ganttNormal", data.gantt.normal || []);
+            drawGanttChart("ganttThermal", data.gantt.thermal || []);
+
+            showMessage("Scheduler results updated successfully.", "success");
+
+        } catch (error) {
+            console.error("Scheduler error:", error);
+            showMessage("Error: " + error.message, "error");
+        }
+    }
+
+    createInputs();
+</script>
+</body>
+</html>
